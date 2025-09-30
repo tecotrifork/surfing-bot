@@ -23,8 +23,14 @@
       }
 
       body {
-        font-family: 'Inter', sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: "Inter", sans-serif;
+        background: linear-gradient(
+            135deg,
+            rgba(102, 126, 234, 0.7) 0%,
+            rgba(118, 75, 162, 0.7) 100%
+          ),
+          url("https://images.unsplash.com/photo-1502680390469-be75c86b636f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2340&q=80")
+            center/cover fixed;
         min-height: 100vh;
         color: #333;
       }
@@ -361,18 +367,18 @@
         const [messages, setMessages] = useState([
           {
             id: 1,
-            type: 'bot',
+            type: "bot",
             content:
-              '🏄‍♂️ Welcome to the Surfing Conditions Bot! I can help you find real-time surfing conditions for any location worldwide. Try asking me about your favorite surf spot!',
+              "🏄‍♂️ Welcome to the Surfing Conditions Bot! I can help you find real-time surfing conditions for any location worldwide. Try asking me about your favorite surf spot!",
             timestamp: new Date(),
           },
         ]);
-        const [inputValue, setInputValue] = useState('');
+        const [inputValue, setInputValue] = useState("");
         const [isLoading, setIsLoading] = useState(false);
         const messagesEndRef = useRef(null);
 
         const scrollToBottom = () => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         };
 
         useEffect(() => {
@@ -380,11 +386,11 @@
         }, [messages]);
 
         const exampleQueries = [
-          'What are the surfing conditions in San Diego?',
-          'How is the surf at Pipeline?',
-          'Best time to surf in Malibu tomorrow',
-          'Surfing conditions for Bondi Beach',
-          'Is it safe to surf at Jaws for beginners?',
+          "What are the surfing conditions in San Diego?",
+          "How is the surf at Pipeline?",
+          "Best time to surf in Malibu tomorrow",
+          "Surfing conditions for Bondi Beach",
+          "Is it safe to surf at Jaws for beginners?",
           "What's the surf like at Uluwatu today?",
         ];
 
@@ -393,20 +399,20 @@
 
           const userMessage = {
             id: Date.now(),
-            type: 'user',
+            type: "user",
             content: messageText,
             timestamp: new Date(),
           };
 
           setMessages((prev) => [...prev, userMessage]);
-          setInputValue('');
+          setInputValue("");
           setIsLoading(true);
 
           try {
-            const response = await fetch('/api/chat', {
-              method: 'POST',
+            const response = await fetch("/api/chat", {
+              method: "POST",
               headers: {
-                'Content-Type': 'application/json',
+                "Content-Type": "application/json",
               },
               body: JSON.stringify({ message: messageText }),
             });
@@ -419,19 +425,19 @@
 
             const botMessage = {
               id: Date.now() + 1,
-              type: 'bot',
+              type: "bot",
               content: data.response,
               timestamp: new Date(),
             };
 
             setMessages((prev) => [...prev, botMessage]);
           } catch (error) {
-            console.error('Error:', error);
+            console.error("Error:", error);
             const errorMessage = {
               id: Date.now() + 1,
-              type: 'bot',
+              type: "bot",
               content:
-                'Sorry, I encountered an error while processing your request. Please try again.',
+                "Sorry, I encountered an error while processing your request. Please try again.",
               timestamp: new Date(),
             };
             setMessages((prev) => [...prev, errorMessage]);
@@ -452,10 +458,10 @@
         const formatMessage = (content) => {
           // Convert markdown-like formatting to HTML
           return content
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\n/g, '<br>')
-            .replace(/• /g, '• ');
+            .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+            .replace(/\*(.*?)\*/g, "<em>$1</em>")
+            .replace(/\n/g, "<br>")
+            .replace(/• /g, "• ");
         };
 
         return (
@@ -478,7 +484,7 @@
                   {messages.map((message) => (
                     <div key={message.id} className={`message ${message.type}`}>
                       <div className="message-avatar">
-                        {message.type === 'user' ? '👤' : '🏄‍♂️'}
+                        {message.type === "user" ? "👤" : "🏄‍♂️"}
                       </div>
                       <div
                         className="message-content"
@@ -546,7 +552,7 @@
         );
       }
 
-      ReactDOM.render(<App />, document.getElementById('root'));
+      ReactDOM.render(<App />, document.getElementById("root"));
     </script>
   </body>
 </html>
