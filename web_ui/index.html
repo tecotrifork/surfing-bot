@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🏄‍♂️ Surfing Conditions Bot</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: #333;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 1rem 2rem;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-align: center;
+      }
+
+      .header p {
+        text-align: center;
+        color: #666;
+        margin-top: 0.5rem;
+        font-size: 1.1rem;
+      }
+
+      .main-content {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem;
+      }
+
+      .chat-container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        max-width: 800px;
+        height: 600px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .chat-header {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+      }
+
+      .chat-header h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+
+      .chat-header p {
+        opacity: 0.9;
+        font-size: 0.9rem;
+      }
+
+      .chat-messages {
+        flex: 1;
+        padding: 1.5rem;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .message {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        animation: fadeInUp 0.3s ease-out;
+      }
+
+      .message.user {
+        flex-direction: row-reverse;
+      }
+
+      .message-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+      }
+
+      .message.user .message-avatar {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+      }
+
+      .message.bot .message-avatar {
+        background: linear-gradient(135deg, #4facfe, #00f2fe);
+        color: white;
+      }
+
+      .message-content {
+        max-width: 70%;
+        padding: 1rem 1.25rem;
+        border-radius: 18px;
+        line-height: 1.5;
+        word-wrap: break-word;
+      }
+
+      .message.user .message-content {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border-bottom-right-radius: 6px;
+      }
+
+      .message.bot .message-content {
+        background: #f8f9fa;
+        color: #333;
+        border: 1px solid #e9ecef;
+        border-bottom-left-radius: 6px;
+      }
+
+      .message.bot .message-content h3 {
+        color: #667eea;
+        margin-bottom: 0.5rem;
+        font-size: 1.1rem;
+      }
+
+      .message.bot .message-content ul {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      .message.bot .message-content li {
+        margin: 0.25rem 0;
+      }
+
+      .chat-input-container {
+        padding: 1.5rem;
+        background: #f8f9fa;
+        border-top: 1px solid #e9ecef;
+      }
+
+      .chat-input-form {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+      }
+
+      .chat-input {
+        flex: 1;
+        padding: 1rem 1.25rem;
+        border: 2px solid #e9ecef;
+        border-radius: 25px;
+        font-size: 1rem;
+        outline: none;
+        transition: all 0.3s ease;
+        background: white;
+      }
+
+      .chat-input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .send-button {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 1.2rem;
+      }
+
+      .send-button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+      }
+
+      .send-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .loading {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #666;
+        font-style: italic;
+      }
+
+      .loading-dots {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .loading-dot {
+        width: 6px;
+        height: 6px;
+        background: #667eea;
+        border-radius: 50%;
+        animation: loading 1.4s infinite ease-in-out;
+      }
+
+      .loading-dot:nth-child(1) {
+        animation-delay: -0.32s;
+      }
+      .loading-dot:nth-child(2) {
+        animation-delay: -0.16s;
+      }
+
+      .example-queries {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: rgba(102, 126, 234, 0.1);
+        border-radius: 12px;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+      }
+
+      .example-queries h4 {
+        color: #667eea;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+
+      .example-query {
+        display: inline-block;
+        background: white;
+        color: #667eea;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        margin: 0.25rem 0.5rem 0.25rem 0;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 0.85rem;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+      }
+
+      .example-query:hover {
+        background: #667eea;
+        color: white;
+        transform: translateY(-1px);
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes loading {
+        0%,
+        80%,
+        100% {
+          transform: scale(0);
+        }
+        40% {
+          transform: scale(1);
+        }
+      }
+
+      .error-message {
+        background: #fee;
+        color: #c33;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid #fcc;
+        margin: 1rem 0;
+      }
+
+      .success-message {
+        background: #efe;
+        color: #363;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid #cfc;
+        margin: 1rem 0;
+      }
+
+      @media (max-width: 768px) {
+        .main-content {
+          padding: 1rem;
+        }
+
+        .chat-container {
+          height: 500px;
+        }
+
+        .header h1 {
+          font-size: 1.5rem;
+        }
+
+        .message-content {
+          max-width: 85%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useRef, useEffect } = React;
+
+      function App() {
+        const [messages, setMessages] = useState([
+          {
+            id: 1,
+            type: 'bot',
+            content:
+              '🏄‍♂️ Welcome to the Surfing Conditions Bot! I can help you find real-time surfing conditions for any location worldwide. Try asking me about your favorite surf spot!',
+            timestamp: new Date(),
+          },
+        ]);
+        const [inputValue, setInputValue] = useState('');
+        const [isLoading, setIsLoading] = useState(false);
+        const messagesEndRef = useRef(null);
+
+        const scrollToBottom = () => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        useEffect(() => {
+          scrollToBottom();
+        }, [messages]);
+
+        const exampleQueries = [
+          'What are the surfing conditions in San Diego?',
+          'How is the surf at Pipeline?',
+          'Best time to surf in Malibu tomorrow',
+          'Surfing conditions for Bondi Beach',
+          'Is it safe to surf at Jaws for beginners?',
+          "What's the surf like at Uluwatu today?",
+        ];
+
+        const sendMessage = async (messageText) => {
+          if (!messageText.trim() || isLoading) return;
+
+          const userMessage = {
+            id: Date.now(),
+            type: 'user',
+            content: messageText,
+            timestamp: new Date(),
+          };
+
+          setMessages((prev) => [...prev, userMessage]);
+          setInputValue('');
+          setIsLoading(true);
+
+          try {
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ message: messageText }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            const botMessage = {
+              id: Date.now() + 1,
+              type: 'bot',
+              content: data.response,
+              timestamp: new Date(),
+            };
+
+            setMessages((prev) => [...prev, botMessage]);
+          } catch (error) {
+            console.error('Error:', error);
+            const errorMessage = {
+              id: Date.now() + 1,
+              type: 'bot',
+              content:
+                'Sorry, I encountered an error while processing your request. Please try again.',
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          sendMessage(inputValue);
+        };
+
+        const handleExampleClick = (query) => {
+          setInputValue(query);
+        };
+
+        const formatMessage = (content) => {
+          // Convert markdown-like formatting to HTML
+          return content
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/\n/g, '<br>')
+            .replace(/• /g, '• ');
+        };
+
+        return (
+          <div className="app">
+            <header className="header">
+              <h1>🏄‍♂️ Surfing Conditions Bot</h1>
+              <p>Get real-time surfing conditions for any location worldwide</p>
+            </header>
+
+            <main className="main-content">
+              <div className="chat-container">
+                <div className="chat-header">
+                  <h2>Chat with the Surf Bot</h2>
+                  <p>
+                    Ask about surfing conditions, safety, or best times to surf
+                  </p>
+                </div>
+
+                <div className="chat-messages">
+                  {messages.map((message) => (
+                    <div key={message.id} className={`message ${message.type}`}>
+                      <div className="message-avatar">
+                        {message.type === 'user' ? '👤' : '🏄‍♂️'}
+                      </div>
+                      <div
+                        className="message-content"
+                        dangerouslySetInnerHTML={{
+                          __html: formatMessage(message.content),
+                        }}
+                      />
+                    </div>
+                  ))}
+
+                  {isLoading && (
+                    <div className="message bot">
+                      <div className="message-avatar">🏄‍♂️</div>
+                      <div className="message-content">
+                        <div className="loading">
+                          <span>Getting surf conditions</span>
+                          <div className="loading-dots">
+                            <div className="loading-dot"></div>
+                            <div className="loading-dot"></div>
+                            <div className="loading-dot"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
+                </div>
+
+                <div className="chat-input-container">
+                  <form onSubmit={handleSubmit} className="chat-input-form">
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder="Ask about surfing conditions..."
+                      className="chat-input"
+                      disabled={isLoading}
+                    />
+                    <button
+                      type="submit"
+                      className="send-button"
+                      disabled={isLoading || !inputValue.trim()}
+                    >
+                      <i className="fas fa-paper-plane"></i>
+                    </button>
+                  </form>
+
+                  <div className="example-queries">
+                    <h4>Try these examples:</h4>
+                    {exampleQueries.map((query, index) => (
+                      <span
+                        key={index}
+                        className="example-query"
+                        onClick={() => handleExampleClick(query)}
+                      >
+                        {query}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </main>
+          </div>
+        );
+      }
+
+      ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+  </body>
+</html>
