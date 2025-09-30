@@ -60,6 +60,117 @@ class SurfingConditionsBot:
             print(f"❌ Error geocoding city {city_name}: {e}")
             return None
     
+    def _extract_user_experience(self, text: str) -> str:
+        """Extract user experience level from query"""
+        text_lower = text.lower()
+        
+        # Beginner indicators
+        beginner_terms = [
+            'beginner', 'new to surf', 'learning', 'first time', 'never surf', 
+            'just started', 'novice', 'inexperienced', 'safe for beginners',
+            'learning to surf', 'new surfer', 'starting out'
+        ]
+        
+        # Advanced indicators  
+        advanced_terms = [
+            'experienced', 'advanced', 'expert', 'professional', 'big wave',
+            'charging', 'heavy water', 'overhead', 'double overhead', 'veteran',
+            'years of experience', 'expert level'
+        ]
+        
+        # Intermediate indicators
+        intermediate_terms = [
+            'intermediate', 'moderate', 'some experience', 'few years',
+            'comfortable', 'progressing', 'getting better', 'improving'
+        ]
+        
+        if any(term in text_lower for term in beginner_terms):
+            return 'beginner'
+        elif any(term in text_lower for term in advanced_terms):
+            return 'advanced'
+        elif any(term in text_lower for term in intermediate_terms):
+            return 'intermediate'
+        
+        return 'intermediate'  # Default assumption
+    
+    def assess_safety_for_user(self, conditions: Dict, user_experience: str) -> Dict:
+        """Assess safety based on conditions and user experience level"""
+        wave_height = conditions.get('wave_height', 0)
+        wave_period = conditions.get('wave_period', 0)
+        swell_height = conditions.get('swell_height', 0)
+        
+        safety_assessment = {
+            'safety_level': 'unknown',
+            'safety_score': 0,  # 0-10, 10 being safest
+            'warnings': [],
+            'recommendations': [],
+            'user_experience': user_experience
+        }
+        
+        # Safety scoring based on experience level
+        if user_experience == 'beginner':
+            # Beginners need smaller, gentler conditions
+            if wave_height <= 1.0 and wave_period >= 8:
+                safety_assessment['safety_level'] = 'safe'
+                safety_assessment['safety_score'] = 8
+                safety_assessment['recommendations'].append('✅ Good conditions for learning!')
+            elif wave_height <= 1.5 and wave_period >= 6:
+                safety_assessment['safety_level'] = 'caution'
+                safety_assessment['safety_score'] = 6
+                safety_assessment['recommendations'].append('⚠️ Manageable but stay close to shore')
+            elif wave_height > 2.0:
+                safety_assessment['safety_level'] = 'dangerous'
+                safety_assessment['safety_score'] = 2
+                safety_assessment['warnings'].append('🚫 Waves too big for beginners - do not surf!')
+            else:
+                safety_assessment['safety_level'] = 'caution'
+                safety_assessment['safety_score'] = 4
+                safety_assessment['recommendations'].append('⚠️ Challenging conditions - consider a lesson')
+                
+        elif user_experience == 'intermediate':
+            # Intermediate surfers can handle moderate conditions
+            if 0.8 <= wave_height <= 3.0 and wave_period >= 6:
+                safety_assessment['safety_level'] = 'safe'
+                safety_assessment['safety_score'] = 7
+                safety_assessment['recommendations'].append('✅ Good conditions for your skill level')
+            elif wave_height > 4.0:
+                safety_assessment['safety_level'] = 'dangerous'
+                safety_assessment['safety_score'] = 3
+                safety_assessment['warnings'].append('⚠️ Large waves - only if very confident')
+            else:
+                safety_assessment['safety_level'] = 'caution'
+                safety_assessment['safety_score'] = 5
+                safety_assessment['recommendations'].append('⚠️ Proceed with caution')
+                
+        else:  # advanced
+            # Advanced surfers can handle most conditions
+            if wave_height <= 6.0:
+                safety_assessment['safety_level'] = 'safe'
+                safety_assessment['safety_score'] = 8
+                safety_assessment['recommendations'].append('✅ Suitable for experienced surfers')
+            elif wave_height > 8.0:
+                safety_assessment['safety_level'] = 'caution'
+                safety_assessment['safety_score'] = 6
+                safety_assessment['warnings'].append('⚠️ Extreme conditions - exercise caution')
+            else:
+                safety_assessment['safety_level'] = 'safe'
+                safety_assessment['safety_score'] = 7
+                safety_assessment['recommendations'].append('✅ Challenging but manageable')
+        
+        # Universal safety warnings
+        if wave_period < 6:
+            safety_assessment['warnings'].append('🌊 Short period waves - expect choppy, unpredictable conditions')
+            safety_assessment['safety_score'] -= 1
+            
+        if wave_height > 1.5 * swell_height and swell_height > 0:
+            safety_assessment['warnings'].append('💨 Significant wind chop - conditions may be messy')
+            safety_assessment['safety_score'] -= 1
+            
+        # Ensure safety score stays in bounds
+        safety_assessment['safety_score'] = max(0, min(10, safety_assessment['safety_score']))
+        
+        return safety_assessment
+    
     def get_marine_weather(self, lat: float, lon: float, start_date: str = None, end_date: str = None) -> Optional[Dict]:
         """Get marine weather data from OpenMeteo API"""
         try:
@@ -345,6 +456,73 @@ class SurfingConditionsBot:
         
         return response
     
+    def get_safety_assessment(self, city_name: str, user_query: str = "") -> str:
+        """Get safety assessment for surfing conditions based on user experience"""
+        # Get basic surfing conditions first
+        coords = self.geocode_city(city_name)
+        if not coords:
+            return f"Sorry, I couldn't find the city '{city_name}'."
+        
+        lat, lon = coords
+        weather_data = self.get_marine_weather(lat, lon)
+        if not weather_data:
+            return f"Sorry, I couldn't retrieve weather data for {city_name}."
+        
+        analysis = self.analyze_surfing_conditions(weather_data)
+        if "error" in analysis:
+            return f"Sorry, I couldn't analyze conditions for {city_name}."
+        
+        # Extract user experience and assess safety
+        user_experience = self._extract_user_experience(user_query)
+        safety = self.assess_safety_for_user(analysis['current_conditions'], user_experience)
+        conditions = analysis['current_conditions']
+        
+        # Format safety-focused response
+        safety_emoji = {
+            'safe': '✅',
+            'caution': '⚠️', 
+            'dangerous': '🚫',
+            'unknown': '❓'
+        }
+        
+        response = f"🏄‍♂️ **Safety Assessment for {city_name.title()}** ({user_experience.title()} Surfer) 🏄‍♂️\n\n"
+        
+        response += f"**Safety Level:** {safety_emoji[safety['safety_level']]} {safety['safety_level'].title()}\n"
+        response += f"**Safety Score:** {safety['safety_score']}/10\n\n"
+        
+        response += "**Current Conditions:**\n"
+        response += f"• Wave Height: {conditions['wave_height']:.1f}m\n"
+        response += f"• Wave Period: {conditions['wave_period']:.1f}s\n"
+        response += f"• Swell Height: {conditions['swell_height']:.1f}m\n\n"
+        
+        if safety['warnings']:
+            response += "**⚠️ Safety Warnings:**\n"
+            for warning in safety['warnings']:
+                response += f"• {warning}\n"
+            response += "\n"
+        
+        if safety['recommendations']:
+            response += "**📋 Recommendations:**\n"
+            for rec in safety['recommendations']:
+                response += f"• {rec}\n"
+            
+        # Add experience-specific safety tips
+        response += "\n**💡 Safety Tips:**\n"
+        if user_experience == 'beginner':
+            response += "• Always surf with others or take a lesson\n"
+            response += "• Stay in shallow water where you can stand\n"
+            response += "• Learn to read the conditions before entering water\n"
+        elif user_experience == 'intermediate':
+            response += "• Check local surf reports and hazards\n"
+            response += "• Know your limits and don't push beyond them\n"
+            response += "• Always surf with a buddy when possible\n"
+        else:  # advanced
+            response += "• Assess conditions thoroughly before entering\n"
+            response += "• Consider current and weather changes\n"
+            response += "• Share knowledge with less experienced surfers\n"
+        
+        return response
+    
     def chat_with_user(self, user_input: str) -> str:
         """Chat interface using OpenAI with function calling"""
         try:
@@ -401,6 +579,24 @@ class SurfingConditionsBot:
                     }
                 },
                 {
+                    "name": "get_safety_assessment",
+                    "description": "Get safety assessment for surfing conditions based on user experience level. Use this when users ask about safety or mention their experience level.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city_name": {
+                                "type": "string",
+                                "description": "The name of the city to assess safety for"
+                            },
+                            "user_query": {
+                                "type": "string",
+                                "description": "The original user query to extract experience level from"
+                            }
+                        },
+                        "required": ["city_name", "user_query"]
+                    }
+                },
+                {
                     "name": "get_marine_weather",
                     "description": "Get raw marine weather data from OpenMeteo API for specific coordinates and optional date range",
                     "parameters": {
@@ -432,11 +628,14 @@ class SurfingConditionsBot:
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": """You are a helpful surfing and weather assistant. You have access to real-time marine weather data through function calls.
+                    {"role": "system", "content": """You are a helpful surfing and weather assistant with safety expertise. You have access to real-time marine weather data through function calls.
 
-When users ask about surfing conditions in specific cities, use the get_surfing_conditions function to get the data, then present it in a friendly, conversational way.
+Function Selection Guidelines:
+- Use get_safety_assessment when users ask about safety ("is it safe?", "should I go out?") or mention their experience level ("beginner", "new to surfing", "experienced")
+- Use get_surfing_conditions for general surf reports and conditions
+- Use get_surfing_conditions_for_date for specific date queries
 
-You can also answer general questions about surfing, weather, ocean conditions, and other topics. Be friendly, informative, and helpful."""},
+Always prioritize safety in your responses and encourage users to surf within their abilities. Be friendly, informative, and helpful."""},
                     {"role": "user", "content": user_input}
                 ],
                 functions=functions,
@@ -461,6 +660,11 @@ You can also answer general questions about surfing, weather, ocean conditions, 
                     start_date = function_args.get("start_date")
                     end_date = function_args.get("end_date")
                     function_result = self.get_surfing_conditions_for_date(city_name, start_date, end_date)
+                    
+                elif function_name == "get_safety_assessment":
+                    city_name = function_args.get("city_name")
+                    user_query = function_args.get("user_query", user_input)
+                    function_result = self.get_safety_assessment(city_name, user_query)
                     
                 elif function_name == "geocode_city":
                     city_name = function_args.get("city_name")
