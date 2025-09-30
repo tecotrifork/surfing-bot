@@ -1,0 +1,13 @@
+# Configuration template file
+# Copy this file to config.py and fill in your actual API keys
+
+# OpenAI API Key - Get yours from https://platform.openai.com/api-keys
+OPENAI_API_KEY = "your-openai-api-key-here"
+
+# OpenMeteo API Settings (no key required, but you can add other settings here)
+OPENMETEO_GEO_BASE_URL = "https://geocoding-api.open-meteo.com/v1"
+OPENMETEO_MARINE_BASE_URL = "https://marine-api.open-meteo.com/v1"
+
+# Other configuration options
+DEFAULT_FORECAST_DAYS = 3
+DEFAULT_TIMEZONE = "auto"
