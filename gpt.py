@@ -259,68 +259,51 @@ class SurfingConditionsBot:
     def chat_with_user(self, user_input: str) -> str:
         """Chat interface using OpenAI to handle user queries"""
         try:
-            # Use OpenAI for all conversation, including surfing queries
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": """You are a helpful surfing and weather assistant. 
-                    
-                    When users ask about surfing conditions in specific cities, you should:
-                    1. Extract the city name from their query
-                    2. Call the get_surfing_conditions method with that city name
-                    3. Present the results in a friendly, informative way
-                    
-                    You have access to real-time marine weather data through the get_surfing_conditions method.
-                    Be friendly, informative, and helpful with all surfing and weather-related questions."""},
-                    {"role": "user", "content": user_input}
-                ],
-                max_tokens=500,
-                functions=[
-                    {
-                        "name": "get_surfing_conditions",
-                        "description": "Get current surfing conditions for a specific city",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "city_name": {
-                                    "type": "string",
-                                    "description": "The name of the city to get surfing conditions for"
-                                }
-                            },
-                            "required": ["city_name"]
-                        }
-                    }
-                ],
-                function_call="auto"
-            )
-            
-            message = response.choices[0].message
-            
-            # Check if ChatGPT wants to call a function
-            if message.function_call and message.function_call.name == "get_surfing_conditions":
-                # Extract city name from function call
-                import json
-                args = json.loads(message.function_call.arguments)
-                city_name = args.get("city_name")
-                
+            # Check if user is asking about surfing conditions and get data first
+            if any(keyword in user_input.lower() for keyword in ['surf', 'surfing', 'wave', 'ocean', 'beach']):
+                # Extract city name from user input
+                city_name = self._extract_city_name(user_input)
                 if city_name:
-                    # Get the actual surfing conditions
-                    conditions = self.get_surfing_conditions(city_name)
+                    # Get the surfing conditions data
+                    conditions_data = self.get_surfing_conditions(city_name)
                     
-                    # Let ChatGPT format the response
-                    follow_up = self.openai_client.chat.completions.create(
+                    # Let ChatGPT handle the conversation with the data
+                    response = self.openai_client.chat.completions.create(
                         model="gpt-4o",
                         messages=[
-                            {"role": "system", "content": "You are a helpful surfing assistant. Present the surfing conditions data in a friendly, informative way."},
-                            {"role": "user", "content": f"Here are the surfing conditions for {city_name}: {conditions}"}
+                            {"role": "system", "content": """You are a helpful surfing and weather assistant. You have access to real-time marine weather data.
+
+When users ask about surfing conditions, you will be provided with the actual data. Present this information in a friendly, conversational way and add your own insights and recommendations.
+
+You can also answer general questions about surfing, weather, and ocean conditions. Be friendly, informative, and helpful."""},
+                            {"role": "user", "content": f"User asked: {user_input}\n\nHere's the surfing conditions data for {city_name}:\n{conditions_data}\n\nPlease respond to the user in a friendly, conversational way."}
+                        ],
+                        max_tokens=1000
+                    )
+                    return response.choices[0].message.content
+                else:
+                    # Let ChatGPT handle the case where no city was specified
+                    response = self.openai_client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": "You are a helpful surfing assistant. Be friendly and ask the user to specify a city name."},
+                            {"role": "user", "content": user_input}
                         ],
                         max_tokens=500
                     )
-                    return follow_up.choices[0].message.content
-                else:
-                    return "I'd be happy to help with surfing conditions! Please specify a city name."
+                    return response.choices[0].message.content
             
-            return message.content
+            # For non-surfing questions, let ChatGPT handle everything
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a helpful surfing and weather assistant. You can answer questions about surfing, weather, ocean conditions, and general topics. Be friendly, informative, and helpful."},
+                    {"role": "user", "content": user_input}
+                ],
+                max_tokens=1000
+            )
+            
+            return response.choices[0].message.content
             
         except Exception as e:
             return f"Sorry, I encountered an error: {e}"
