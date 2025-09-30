@@ -60,7 +60,7 @@ class SurfingConditionsBot:
             print(f"❌ Error geocoding city {city_name}: {e}")
             return None
     
-    def get_marine_weather(self, lat: float, lon: float) -> Optional[Dict]:
+    def get_marine_weather(self, lat: float, lon: float, start_date: str = None, end_date: str = None) -> Optional[Dict]:
         """Get marine weather data from OpenMeteo API"""
         try:
             url = f"{self.openmeteo_marine_base_url}/marine"
@@ -68,9 +68,16 @@ class SurfingConditionsBot:
                 "latitude": lat,
                 "longitude": lon,
                 "hourly": "wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period",
-                "forecast_days": DEFAULT_FORECAST_DAYS,
                 "timezone": DEFAULT_TIMEZONE
             }
+            
+            # Add date parameters if provided
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            else:
+                params["forecast_days"] = DEFAULT_FORECAST_DAYS
             
             print(f"\n🌊 Fetching marine weather data from OpenMeteo API...")
             print(f"📍 Coordinates: {lat}, {lon}")
@@ -114,31 +121,50 @@ class SurfingConditionsBot:
         # Calculate surfing quality score (0-10)
         quality_score = self._calculate_surf_quality(current_conditions)
         
-        # Get forecast for next 24 hours
-        forecast_24h = []
-        for i in range(min(24, len(hourly["wave_height"]))):
-            forecast_24h.append({
+        # Analyze all hours to find best times
+        hourly_analysis = []
+        for i in range(len(hourly["wave_height"])):
+            hour_conditions = {
                 "hour": i,
+                "time": hourly.get("time", [])[i] if hourly.get("time") else f"Hour {i}",
                 "wave_height": hourly["wave_height"][i],
+                "wave_direction": hourly["wave_direction"][i],
                 "wave_period": hourly["wave_period"][i],
                 "swell_height": hourly["swell_wave_height"][i],
+                "swell_direction": hourly["swell_wave_direction"][i],
                 "swell_period": hourly["swell_wave_period"][i]
-            })
+            }
+            hour_conditions["quality_score"] = self._calculate_surf_quality(hour_conditions)
+            hourly_analysis.append(hour_conditions)
+        
+        # Find best surfing times (top 3 hours with highest scores)
+        # Filter out entries with None quality scores and sort
+        valid_hours = [hour for hour in hourly_analysis if hour["quality_score"] is not None]
+        best_times = sorted(valid_hours, key=lambda x: x["quality_score"], reverse=True)[:3]
+        
+        # Get forecast for next 24 hours (for backward compatibility)
+        forecast_24h = hourly_analysis[:min(24, len(hourly_analysis))]
         
         return {
             "current_conditions": current_conditions,
             "quality_score": quality_score,
             "quality_description": self._get_quality_description(quality_score),
             "forecast_24h": forecast_24h,
+            "best_times": best_times,
+            "hourly_analysis": hourly_analysis,
             "recommendations": self._get_surf_recommendations(current_conditions, quality_score)
         }
     
     def _calculate_surf_quality(self, conditions: Dict) -> float:
         """Calculate surfing quality score based on wave conditions"""
-        wave_height = conditions["wave_height"]
-        wave_period = conditions["wave_period"]
-        swell_height = conditions["swell_height"]
-        swell_period = conditions["swell_period"]
+        wave_height = conditions.get("wave_height")
+        wave_period = conditions.get("wave_period")
+        swell_height = conditions.get("swell_height")
+        swell_period = conditions.get("swell_period")
+        
+        # Handle None values by returning 0 score
+        if wave_height is None or wave_period is None or swell_height is None or swell_period is None:
+            return 0.0
         
         score = 0
         
@@ -247,10 +273,73 @@ class SurfingConditionsBot:
 • Swell Period: {conditions['swell_period']:.1f}s
 • Wave Direction: {conditions['wave_direction']:.0f}°
 
-**Surf Quality:** {analysis['quality_score']:.1f}/10 - {analysis['quality_description']}
+**Surf Quality:** {analysis['quality_score']:.2f}/10 - {analysis['quality_description']}
 
-**Recommendations:**
+**Best Surfing Times:**
 """
+        
+        # Add best times if available
+        if "best_times" in analysis and analysis["best_times"]:
+            for i, best_time in enumerate(analysis["best_times"], 1):
+                time_str = best_time.get("time", f"Hour {best_time['hour']}")
+                response += f"{i}. {time_str} - Quality: {best_time['quality_score']:.2f}/10 (Wave: {best_time['wave_height']:.1f}m, Period: {best_time['wave_period']:.1f}s)\n"
+        
+        response += "\n**Recommendations:**\n"
+        for rec in analysis['recommendations']:
+            response += f"• {rec}\n"
+        
+        return response
+    
+    def get_surfing_conditions_for_date(self, city_name: str, start_date: str, end_date: str = None) -> str:
+        """Get surfing conditions for a specific date or date range"""
+        # Geocode the city
+        coords = self.geocode_city(city_name)
+        if not coords:
+            return f"Sorry, I couldn't find the city '{city_name}'. Please check the spelling and try again."
+        
+        lat, lon = coords
+        
+        # Use end_date as start_date if only one date provided
+        if not end_date:
+            end_date = start_date
+        
+        # Get marine weather data for the specific date range
+        weather_data = self.get_marine_weather(lat, lon, start_date, end_date)
+        if not weather_data:
+            return f"Sorry, I couldn't retrieve weather data for {city_name} on {start_date}."
+        
+        # Analyze conditions
+        analysis = self.analyze_surfing_conditions(weather_data)
+        
+        if "error" in analysis:
+            return f"Sorry, I couldn't analyze the surfing conditions for {city_name} on {start_date}."
+        
+        # Format response with date information
+        conditions = analysis["current_conditions"]
+        date_info = f" from {start_date} to {end_date}" if start_date != end_date else f" on {start_date}"
+        
+        response = f"""
+🏄‍♂️ **Surfing Conditions for {city_name.title()}{date_info}** 🏄‍♂️
+
+**Current Conditions:**
+• Wave Height: {conditions['wave_height']:.1f}m
+• Wave Period: {conditions['wave_period']:.1f}s
+• Swell Height: {conditions['swell_height']:.1f}m
+• Swell Period: {conditions['swell_period']:.1f}s
+• Wave Direction: {conditions['wave_direction']:.0f}°
+
+**Surf Quality:** {analysis['quality_score']:.2f}/10 - {analysis['quality_description']}
+
+**Best Surfing Times:**
+"""
+        
+        # Add best times if available
+        if "best_times" in analysis and analysis["best_times"]:
+            for i, best_time in enumerate(analysis["best_times"], 1):
+                time_str = best_time.get("time", f"Hour {best_time['hour']}")
+                response += f"{i}. {time_str} - Quality: {best_time['quality_score']:.2f}/10 (Wave: {best_time['wave_height']:.1f}m, Period: {best_time['wave_period']:.1f}s)\n"
+        
+        response += "\n**Recommendations:**\n"
         for rec in analysis['recommendations']:
             response += f"• {rec}\n"
         
@@ -276,6 +365,28 @@ class SurfingConditionsBot:
                     }
                 },
                 {
+                    "name": "get_surfing_conditions_for_date",
+                    "description": "Get surfing conditions for a specific date or date range. Use this when users ask about specific dates like 'October 1st 2025' or 'best surfing hour on October 1st'",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city_name": {
+                                "type": "string",
+                                "description": "The name of the city to get surfing conditions for"
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date in YYYY-MM-DD format (e.g., '2025-10-01')"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date in YYYY-MM-DD format (optional, defaults to start_date if not provided)"
+                            }
+                        },
+                        "required": ["city_name", "start_date"]
+                    }
+                },
+                {
                     "name": "geocode_city",
                     "description": "Get latitude and longitude coordinates for a city name",
                     "parameters": {
@@ -291,7 +402,7 @@ class SurfingConditionsBot:
                 },
                 {
                     "name": "get_marine_weather",
-                    "description": "Get raw marine weather data from OpenMeteo API for specific coordinates",
+                    "description": "Get raw marine weather data from OpenMeteo API for specific coordinates and optional date range",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -302,6 +413,14 @@ class SurfingConditionsBot:
                             "longitude": {
                                 "type": "number", 
                                 "description": "Longitude coordinate"
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date in YYYY-MM-DD format (optional)"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date in YYYY-MM-DD format (optional)"
                             }
                         },
                         "required": ["latitude", "longitude"]
@@ -337,6 +456,12 @@ You can also answer general questions about surfing, weather, ocean conditions, 
                     city_name = function_args.get("city_name")
                     function_result = self.get_surfing_conditions(city_name)
                     
+                elif function_name == "get_surfing_conditions_for_date":
+                    city_name = function_args.get("city_name")
+                    start_date = function_args.get("start_date")
+                    end_date = function_args.get("end_date")
+                    function_result = self.get_surfing_conditions_for_date(city_name, start_date, end_date)
+                    
                 elif function_name == "geocode_city":
                     city_name = function_args.get("city_name")
                     coords = self.geocode_city(city_name)
@@ -345,7 +470,9 @@ You can also answer general questions about surfing, weather, ocean conditions, 
                 elif function_name == "get_marine_weather":
                     lat = function_args.get("latitude")
                     lon = function_args.get("longitude")
-                    weather_data = self.get_marine_weather(lat, lon)
+                    start_date = function_args.get("start_date")
+                    end_date = function_args.get("end_date")
+                    weather_data = self.get_marine_weather(lat, lon, start_date, end_date)
                     function_result = f"Marine weather data: {json.dumps(weather_data, indent=2)}" if weather_data else "Could not retrieve marine weather data"
                 
                 else:
