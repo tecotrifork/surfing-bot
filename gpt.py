@@ -257,53 +257,123 @@ class SurfingConditionsBot:
         return response
     
     def chat_with_user(self, user_input: str) -> str:
-        """Chat interface using OpenAI to handle user queries"""
+        """Chat interface using OpenAI with function calling"""
         try:
-            # Check if user is asking about surfing conditions and get data first
-            if any(keyword in user_input.lower() for keyword in ['surf', 'surfing', 'wave', 'ocean', 'beach']):
-                # Extract city name from user input
-                city_name = self._extract_city_name(user_input)
-                if city_name:
-                    # Get the surfing conditions data
-                    conditions_data = self.get_surfing_conditions(city_name)
-                    
-                    # Let ChatGPT handle the conversation with the data
-                    response = self.openai_client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": """You are a helpful surfing and weather assistant. You have access to real-time marine weather data.
-
-When users ask about surfing conditions, you will be provided with the actual data. Present this information in a friendly, conversational way and add your own insights and recommendations.
-
-You can also answer general questions about surfing, weather, and ocean conditions. Be friendly, informative, and helpful."""},
-                            {"role": "user", "content": f"User asked: {user_input}\n\nHere's the surfing conditions data for {city_name}:\n{conditions_data}\n\nPlease respond to the user in a friendly, conversational way."}
-                        ],
-                        max_tokens=1000
-                    )
-                    return response.choices[0].message.content
-                else:
-                    # Let ChatGPT handle the case where no city was specified
-                    response = self.openai_client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful surfing assistant. Be friendly and ask the user to specify a city name."},
-                            {"role": "user", "content": user_input}
-                        ],
-                        max_tokens=500
-                    )
-                    return response.choices[0].message.content
+            # Define the functions ChatGPT can call
+            functions = [
+                {
+                    "name": "get_surfing_conditions",
+                    "description": "Get current surfing conditions for a specific city including wave height, period, swell data, and quality score",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city_name": {
+                                "type": "string",
+                                "description": "The name of the city to get surfing conditions for (e.g., 'San Diego', 'Las Palmas de Gran Canaria')"
+                            }
+                        },
+                        "required": ["city_name"]
+                    }
+                },
+                {
+                    "name": "geocode_city",
+                    "description": "Get latitude and longitude coordinates for a city name",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city_name": {
+                                "type": "string",
+                                "description": "The name of the city to geocode"
+                            }
+                        },
+                        "required": ["city_name"]
+                    }
+                },
+                {
+                    "name": "get_marine_weather",
+                    "description": "Get raw marine weather data from OpenMeteo API for specific coordinates",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "latitude": {
+                                "type": "number",
+                                "description": "Latitude coordinate"
+                            },
+                            "longitude": {
+                                "type": "number", 
+                                "description": "Longitude coordinate"
+                            }
+                        },
+                        "required": ["latitude", "longitude"]
+                    }
+                }
+            ]
             
-            # For non-surfing questions, let ChatGPT handle everything
+            # First API call - let ChatGPT decide what to do
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a helpful surfing and weather assistant. You can answer questions about surfing, weather, ocean conditions, and general topics. Be friendly, informative, and helpful."},
+                    {"role": "system", "content": """You are a helpful surfing and weather assistant. You have access to real-time marine weather data through function calls.
+
+When users ask about surfing conditions in specific cities, use the get_surfing_conditions function to get the data, then present it in a friendly, conversational way.
+
+You can also answer general questions about surfing, weather, ocean conditions, and other topics. Be friendly, informative, and helpful."""},
                     {"role": "user", "content": user_input}
                 ],
+                functions=functions,
+                function_call="auto",
                 max_tokens=1000
             )
             
-            return response.choices[0].message.content
+            message = response.choices[0].message
+            
+            # Check if ChatGPT wants to call a function
+            if message.function_call:
+                function_name = message.function_call.name
+                function_args = json.loads(message.function_call.arguments)
+                
+                # Execute the function
+                if function_name == "get_surfing_conditions":
+                    city_name = function_args.get("city_name")
+                    function_result = self.get_surfing_conditions(city_name)
+                    
+                elif function_name == "geocode_city":
+                    city_name = function_args.get("city_name")
+                    coords = self.geocode_city(city_name)
+                    function_result = f"Coordinates for {city_name}: {coords}" if coords else f"Could not find coordinates for {city_name}"
+                    
+                elif function_name == "get_marine_weather":
+                    lat = function_args.get("latitude")
+                    lon = function_args.get("longitude")
+                    weather_data = self.get_marine_weather(lat, lon)
+                    function_result = f"Marine weather data: {json.dumps(weather_data, indent=2)}" if weather_data else "Could not retrieve marine weather data"
+                
+                else:
+                    function_result = "Unknown function called"
+                
+                # Second API call - give ChatGPT the function result
+                messages = [
+                    {"role": "system", "content": "You are a helpful surfing assistant. Present the function results in a friendly, conversational way."},
+                    {"role": "user", "content": user_input}
+                ]
+                
+                # Only add assistant message if there's content
+                if message.content:
+                    messages.append({"role": "assistant", "content": message.content})
+                
+                # Add the function result
+                messages.append({"role": "function", "name": function_name, "content": function_result})
+                
+                follow_up_response = self.openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    max_tokens=1000
+                )
+                
+                return follow_up_response.choices[0].message.content
+            
+            # No function call needed, return ChatGPT's response
+            return message.content
             
         except Exception as e:
             return f"Sorry, I encountered an error: {e}"
