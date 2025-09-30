@@ -523,6 +523,128 @@ class SurfingConditionsBot:
         
         return response
     
+    def compare_surfing_cities(self, city_names: List[str], start_date: str = None, end_date: str = None) -> str:
+        """Compare surfing conditions across multiple cities and provide ranking"""
+        if len(city_names) < 2:
+            return "Please provide at least 2 cities to compare."
+        
+        if len(city_names) > 5:
+            return "Please limit comparisons to 5 cities or fewer for better readability."
+        
+        city_data = []
+        
+        # Get data for each city
+        for city_name in city_names:
+            # Geocode the city
+            coords = self.geocode_city(city_name)
+            if not coords:
+                city_data.append({
+                    'city': city_name,
+                    'error': f"Could not find coordinates for {city_name}",
+                    'quality_score': 0,
+                    'conditions': None,
+                    'analysis': None
+                })
+                continue
+            
+            lat, lon = coords
+            
+            # Get marine weather data
+            weather_data = self.get_marine_weather(lat, lon, start_date, end_date)
+            if not weather_data:
+                city_data.append({
+                    'city': city_name,
+                    'error': f"Could not retrieve weather data for {city_name}",
+                    'quality_score': 0,
+                    'conditions': None,
+                    'analysis': None
+                })
+                continue
+            
+            # Analyze conditions
+            analysis = self.analyze_surfing_conditions(weather_data)
+            if "error" in analysis:
+                city_data.append({
+                    'city': city_name,
+                    'error': f"Could not analyze conditions for {city_name}",
+                    'quality_score': 0,
+                    'conditions': None,
+                    'analysis': None
+                })
+                continue
+            
+            # Store successful data
+            city_data.append({
+                'city': city_name,
+                'error': None,
+                'quality_score': analysis['quality_score'],
+                'conditions': analysis['current_conditions'],
+                'analysis': analysis,
+                'quality_description': analysis['quality_description']
+            })
+        # Sort cities by quality score (highest first)
+        valid_cities = [city for city in city_data if city['error'] is None]
+        invalid_cities = [city for city in city_data if city['error'] is not None]
+        print(f"\nValid cities for comparison: {[city['city'] for city in valid_cities]}")
+        # Sort valid cities by quality score
+        valid_cities.sort(key=lambda x: x['quality_score'], reverse=True)
+        
+        # Build comparison response
+        date_info = ""
+        if start_date:
+            date_info = f" ({start_date}" + (f" to {end_date}" if end_date and end_date != start_date else "") + ")"
+        
+        response = f"🏄‍♂️ **Surfing Cities Comparison{date_info}** 🏄‍♂️\n\n"
+        
+        if valid_cities:
+            response += "**🏆 Ranking (Best to Worst):**\n"
+            for i, city in enumerate(valid_cities, 1):
+                rank_emoji = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][min(i-1, 4)]
+                conditions = city['conditions']
+                response += f"{rank_emoji} **{city['city'].title()}** - Score: {city['quality_score']:.1f}/10\n"
+                response += f"   {city['quality_description']}\n"
+                response += f"   Wave: {conditions['wave_height']:.1f}m @ {conditions['wave_period']:.1f}s\n"
+                response += f"   Swell: {conditions['swell_height']:.1f}m @ {conditions['swell_period']:.1f}s\n\n"
+        
+        if valid_cities:
+            response += "**📊 Detailed Comparison:**\n"
+            response += "```\n"
+            response += f"{'City':<20} {'Score':<8} {'Wave H.':<8} {'Wave P.':<8} {'Swell H.':<9} {'Swell P.':<9}\n"
+            response += "-" * 70 + "\n"
+            
+            for city in valid_cities:
+                conditions = city['conditions']
+                response += f"{city['city'].title():<20} {city['quality_score']:<8.1f} {conditions['wave_height']:<8.1f} {conditions['wave_period']:<8.1f} {conditions['swell_height']:<9.1f} {conditions['swell_period']:<9.1f}\n"
+            response += "```\n\n"
+        
+        # Add recommendations based on ranking
+        if valid_cities:
+            best_city = valid_cities[0]
+            response += "**🎯 Recommendations:**\n"
+            
+            if best_city['quality_score'] >= 6:
+                response += f"• **{best_city['city'].title()}** has the best conditions right now - highly recommended!\n"
+            elif best_city['quality_score'] >= 4:
+                response += f"• **{best_city['city'].title()}** has the best available conditions - decent for surfing\n"
+            else:
+                response += f"• All cities have poor conditions currently. **{best_city['city'].title()}** is the best of limited options\n"
+            
+            # Add safety notes for top cities
+            for city in valid_cities[:2]:  # Top 2 cities
+                conditions = city['conditions']
+                if conditions['wave_height'] > 3:
+                    response += f"• ⚠️ **{city['city'].title()}**: High waves ({conditions['wave_height']:.1f}m) - experienced surfers only\n"
+                elif conditions['wave_height'] < 0.5:
+                    response += f"• 📝 **{city['city'].title()}**: Very small waves ({conditions['wave_height']:.1f}m) - good for beginners\n"
+        
+        # Report errors for cities that couldn't be processed
+        if invalid_cities:
+            response += "\n**❌ Issues:**\n"
+            for city in invalid_cities:
+                response += f"• **{city['city'].title()}**: {city['error']}\n"
+        
+        return response
+    
     def chat_with_user(self, user_input: str) -> str:
         """Chat interface using OpenAI with function calling"""
         try:
@@ -621,6 +743,29 @@ class SurfingConditionsBot:
                         },
                         "required": ["latitude", "longitude"]
                     }
+                },
+                {
+                    "name": "compare_surfing_cities",
+                    "description": "Compare surfing conditions across multiple cities and provide a ranking. Use this when users want to compare or rank multiple surfing locations.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of city names to compare (2-5 cities recommended)"
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date in YYYY-MM-DD format (optional)"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date in YYYY-MM-DD format (optional)"
+                            }
+                        },
+                        "required": ["city_names"]
+                    }
                 }
             ]
             
@@ -634,6 +779,7 @@ Function Selection Guidelines:
 - Use get_safety_assessment when users ask about safety ("is it safe?", "should I go out?") or mention their experience level ("beginner", "new to surfing", "experienced")
 - Use get_surfing_conditions for general surf reports and conditions
 - Use get_surfing_conditions_for_date for specific date queries
+- Use compare_surfing_cities when users want to compare multiple locations ("compare", "which is better", "rank these cities", "best option between")
 
 Always prioritize safety in your responses and encourage users to surf within their abilities. Be friendly, informative, and helpful."""},
                     {"role": "user", "content": user_input}
@@ -678,6 +824,12 @@ Always prioritize safety in your responses and encourage users to surf within th
                     end_date = function_args.get("end_date")
                     weather_data = self.get_marine_weather(lat, lon, start_date, end_date)
                     function_result = f"Marine weather data: {json.dumps(weather_data, indent=2)}" if weather_data else "Could not retrieve marine weather data"
+                
+                elif function_name == "compare_surfing_cities":
+                    city_names = function_args.get("city_names", [])
+                    start_date = function_args.get("start_date")
+                    end_date = function_args.get("end_date")
+                    function_result = self.compare_surfing_cities(city_names, start_date, end_date)
                 
                 else:
                     function_result = "Unknown function called"
